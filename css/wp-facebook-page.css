@@ -1,0 +1,9 @@
+.wp-page-feed { width: 100%; background-color: lightyellow; }
+.wp-page-feed div { display: inline-block; vertical-align: top; }
+.wp-page-feed div.item { border: 1px solid red; width: 33%; min-height: 150px; padding: 0.75em; }
+.wp-page-feed div.title { display: block; font-size: 1em; }
+.wp-page-feed div.date { display: block; font-size: 0.75em; }
+.wp-page-feed a { color: #feba03; text-decoration: none; display: inline-block; }
+.wp-page-feed a:hover { text-decoration: underline; }
+
+/*# sourceMappingURL=wp-facebook-page.css.map */

@@ -1,0 +1,38 @@
+.wp-page-feed {
+    
+    width:100%;
+    background-color:lightyellow;
+    
+    div { 
+        
+        display: inline-block;
+        vertical-align: top;
+        
+        &.item {
+            border:1px solid red;
+            width: 33%;
+            min-height: 150px;
+            padding: 0.75em;
+        }
+        
+        &.title {
+            display: block;
+            font-size:1em;
+        }
+        
+        &.date {
+            display: block;
+            font-size:0.75em;
+        }
+    }
+
+    a {
+        color:#feba03;
+        text-decoration: none;
+        display: inline-block;
+        
+        &:hover{
+            text-decoration: underline;
+        }
+    }
+}

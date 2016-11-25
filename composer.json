@@ -1,0 +1,15 @@
+{
+    "name": "tribalpixel/tribalpixel-wp-facebook-page",
+    "description": "Wordpress Plugin",
+    "type": "wordpress-plugin",
+    "license": "GPLv2",
+    "authors": [
+        {
+            "name": "Tribalpixel",
+            "email": "tribalpixel@gmail.com"
+        }
+    ],
+    "require": {
+        "facebook/graph-sdk": "^5.4"
+    }
+}
