@@ -1,9 +1,8 @@
-.wp-page-feed { width: 100%; background-color: lightyellow; }
-.wp-page-feed div { display: inline-block; vertical-align: top; }
-.wp-page-feed div.item { border: 1px solid red; width: 33%; min-height: 150px; padding: 0.75em; }
-.wp-page-feed div.title { display: block; font-size: 1em; }
-.wp-page-feed div.date { display: block; font-size: 0.75em; }
-.wp-page-feed a { color: #feba03; text-decoration: none; display: inline-block; }
-.wp-page-feed a:hover { text-decoration: underline; }
+.cf-facebook-albums { box-sizing: border-box; justify-content: center; display: flex; flex-wrap: wrap; }
+
+.cf-facebook-album { width: 400px; /*border: 1px solid gray;*/ box-shadow: 1px 1px 3px #888; min-height: 120px; padding: 0; margin: 5px; }
+.cf-facebook-album div { float: left; margin: 10px; max-width: 250px; }
+.cf-facebook-album i { margin-right: 10px; }
+.cf-facebook-album strong { background-color: gold; padding: 5px; font-size: 12px; white-space: nowrap; font-weight: bold; }
 
 /*# sourceMappingURL=wp-facebook-page.css.map */

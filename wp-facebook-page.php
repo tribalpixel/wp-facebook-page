@@ -4,29 +4,30 @@
   GitHub Plugin URI: https://github.com/<owner>/<repo>
   Description: Facebook Page Integration
   Version: 1.0.0
-  Author: Tribalpixel
+  Author: Ludovic Bortolotti
   Author URI: http://www.tribalpixel.ch
-  License: GPLv2
-  License URI: http://www.gnu.org/licenses/gpl-2.0.txt
+  License: MIT
  */
-
-namespace Tribalpixel;
 
 if (!defined('ABSPATH'))
     exit; // Exit if accessed directly
 
+
+    
+// Include SDK
 require_once 'vendor/autoload.php';
 
-class WP_Facebook_Page {
+class Tribalpixel_WP_Facebook_Page {
 
     private $plugin_name = 'Facebook Page';
     private $plugin_prefix = 'tplwpfp';
     private $fb;
+    private $cache_cleared = false;
 
     /** The settings object */
     private $settings = [
-        'max_feed' => 5,
-        'fetch_interval' => 7200, // in seconds
+        'max_feed' => 20,
+        'fetch_interval' => 3600, // in seconds
     ];
 
     /** Static property to hold our singleton instance */
@@ -45,12 +46,13 @@ class WP_Facebook_Page {
     }
 
     /**
-     * The constructor
+     * Plugin constructor
      *
      * @return void
      */
     public function __construct() {
 
+        // Get instance of Facebook object
         $this->fb = self::getFacebook();
 
         // Admin
@@ -60,52 +62,14 @@ class WP_Facebook_Page {
         // Shortcodes
         add_action('init', array(&$this, 'register_shortcodes'));
 
+        // Clear cache transients
+        add_action('init', array(&$this, 'clear_cache'));
+
         // Add script
         add_action('admin_enqueue_scripts', array(&$this, 'enqueue_font_awesome'));
-        add_action('wp_enqueue_scripts', array(&$this, 'enqueue_font_awesome'));
+        //add_action('wp_enqueue_scripts', array(&$this, 'enqueue_font_awesome'));
         add_action('admin_enqueue_scripts', array(&$this, 'enqueue_css'));
         add_action('wp_enqueue_scripts', array(&$this, 'enqueue_css'));
-    }
-
-    /**
-     * Get instance of facebook object for the page
-     * 
-     * @return \Facebook\Facebook
-     */
-    public function getFacebook() {
-        $id = get_option($this->plugin_prefix . '_app_id');
-        $secret = get_option($this->plugin_prefix . '_app_secret');
-
-        $fb = new \Facebook\Facebook([
-            'app_id' => $id,
-            'app_secret' => $secret,
-        ]);
-        $fb->setDefaultAccessToken("{$id}|{$secret}");
-        return $fb;
-    }
-
-    /**
-     * Make call to facebook graph api
-     * 
-     * @param array $params
-     * @return array
-     */
-    public function getFacebookResponse($params) {
-
-        $endpoint = get_option($this->plugin_prefix . '_app_page_id');
-
-        try {
-            $response = $this->fb->get($endpoint . "?fields=" . implode(",", $params));
-            return $response->getDecodedBody();
-        } catch (Facebook\Exceptions\FacebookResponseException $e) {
-            // When Graph returns an error
-            echo 'Graph returned an error: ' . $e->getMessage();
-            exit;
-        } catch (Facebook\Exceptions\FacebookSDKException $e) {
-            // When validation fails or other local issues
-            echo 'Facebook SDK returned an error: ' . $e->getMessage();
-            exit;
-        }
     }
 
     /**
@@ -113,22 +77,58 @@ class WP_Facebook_Page {
      */
     public function register_shortcodes() {
         add_shortcode("{$this->plugin_prefix}-summary", array(&$this, 'showPageSummmary'));
-        add_shortcode("{$this->plugin_prefix}-albums", array(&$this, 'showPageAlbums'));
-        add_shortcode("{$this->plugin_prefix}-feed", array(&$this, 'showPageFeed'));
+        add_shortcode("{$this->plugin_prefix}-album", array(&$this, 'showAlbum'));
+    }
+
+    public function clear_cache() {
+        if (isset($_POST[$this->plugin_prefix . '-clear-cache'])) {
+
+            delete_transient($this->plugin_prefix . '_page_summary');
+            delete_transient($this->plugin_prefix . '_fb_albums');
+
+            $this->cache_cleared = true;
+        }
+    }
+
+    private function getPluginTransient() {
+        
+    }
+
+    /**
+     * 
+     * @param array $args
+     */
+    public function showAlbum($args) {
+        $transID = $this->plugin_prefix . '_album_' . $args['id'];
+        $transient = get_transient($transID);
+        if (false == $transient) {
+
+            $params = ['created_time', 'name', 'photos{webp_images}'];
+            $infos = self::getFacebookResponse($params, $args['id']);
+            $images = $infos['photos']['data'];
+            $output = '<div class="">';
+            foreach ($images as $k => $v) {
+                $output .= '<div style="background: url(\'' . $v['webp_images'][7]['source'] . '\') no-repeat center center; width:100px; height:100px;"></div>';
+            }
+            $output .= '</div>';
+            set_transient($transID, $output, $this->settings['fetch_interval']);
+            echo $output;
+        } else {
+            if (WP_DEBUG) {
+                echo '<strong>Cached for: ' . $this->settings['fetch_interval'] . ' seconds</strong>';
+            }
+            echo $transient;
+        }
     }
 
     /**
      * Render HTML for shortcode for {$this->plugin_prefix}-summary
      */
     public function showPageSummmary() {
-
-        $transient = get_transient($this->plugin_prefix . '_page_summary');
-
+        $transient = get_transient($this->plugin_prefix . '_fb_page_summary');
         if (false == $transient) {
-
             $params = ['name', 'about', 'category', 'fan_count', 'founded', 'website', 'cover'];
             $infos = self::getFacebookResponse($params);
-
             $output = '<div class="thumbnail"><div class="centered"><img src="' . $infos['cover']['source'] . '" width="150"></div></div>';
             $output .= '<ul>';
             foreach ($infos as $k => $v) {
@@ -137,7 +137,7 @@ class WP_Facebook_Page {
                 }
             }
             $output .= '</ul>';
-            set_transient($this->plugin_prefix . '_page_summary', $output, $this->settings['fetch_interval']);
+            set_transient($this->plugin_prefix . '_fb_page_summary', $output, $this->settings['fetch_interval']);
             echo $output;
         } else {
             echo $transient;
@@ -145,57 +145,43 @@ class WP_Facebook_Page {
     }
 
     /**
-     * Render HTML for shortcode for {$this->plugin_prefix}-albums
+     * Render HTML for admin page "schortcode"
      */
-    public function showPageAlbums() {
-
-        $params = ['albums.limit(10){count,created_time,updated_time,id,name,type,description,cover_photo}'];
-        $infos = self::getFacebookResponse($params);
-
-        echo '<ul>';
-        foreach ($infos['albums']['data'] as $album) {
-            echo '<li><i class="fa fa-picture fa-5x"></i>';
-            if ('normal' === $album['type'])
-                foreach ($album as $k => $v) {
-                    //var_dump($album);
-                    if (!is_array($v)) {
-                        echo '<strong>' . strtoupper($k) . ':</strong> ' . $v . '<br>';
-                    }
-                }
-            echo '</li>';
-        }
-        echo '</ul>';
-
-        //var_dump($infos['albums']['data']);
-    }
-
-    /**
-     * Render HTML for shortcode for {$this->plugin_prefix}-feed
-     */
-    public function showPageFeed() {
-
-        $transient = get_transient($this->plugin_prefix . '_page_feed');
-
+    public function getFacebookAlbumsShortcodes() {
+        $transient = get_transient($this->plugin_prefix . '_fb_albums');
         if (false == $transient) {
+            $params = ['albums.limit(' . $this->settings['max_feed'] . '){id,created_time,updated_time,type,name,description,photo_count,cover_photo{id}}'];
+            $infos = self::getFacebookResponse($params)['albums']['data'];
 
-            $params = ['feed.limit(' . $this->settings['max_feed'] . '){created_time,updated_time,type,permalink_url,picture,timeline_visibility,story,description,status_type,name}'];
-            $infos = self::getFacebookResponse($params);
-            $output = '';
-            $output .= '<div class="wp-page-feed">';
-            foreach ($infos['feed']['data'] as $k => $v) {
-                $output .= '<div class="item">';
-                $output .= '<div class="thumbnail"><img src="' . $v['picture'] . '"></div>';
-                $output .= '<a href="' . $v['permalink_url'] . '">';
-                $output .= '<div class="date">' . mysql2date('l, F j, Y', $v['updated_time']) . '</div>';
-                $output .= '<div class="title">' . $v['name'] . '</div>';
-                $output .= '</a>';
+            foreach ($infos as $k => $v) {
+                if (isset($v['cover_photo'])) {
+                    $infos[$k]['cover_photo']['src'] = self::getFacebookResponse(['picture'], $v['cover_photo']['id'])['picture'];
+                }
+            }
+
+            $output = '<div class="cf-facebook-albums">';
+            foreach ($infos as $k => $v) {
+                $output .= '<div class="cf-facebook-album">';
+                if (isset($v['cover_photo']['src'])) {
+                    $output .= '<div style="background: url(\'' . $v['cover_photo']['src'] . '\') no-repeat center center; width:100px; height:100px;"></div>';
+                } else {
+                    $output .= '<div style="background: url(\'' . plugins_url('css/no-cover.jpg', __FILE__) . '\') no-repeat center center; width:100px; height:100px;"></div>';
+                }
+                $output .= '<div>' . $v['name'] . '<br />';
+                $output .= '<i class="fa fa-picture-o"></i> ' . $v['photo_count'] . '<br />';
                 $output .= '</div>';
-                //var_dump($v);
+                $output .= '<div><strong>[' . $this->plugin_prefix . '-album id="' . $v['id'] . '"]</strong></div>';
+                $output .= '</div>';
             }
             $output .= '</div>';
-            set_transient($this->plugin_prefix . '_page_feed', $output, $this->settings['fetch_interval']);
+
+            set_transient($this->plugin_prefix . '_fb_albums', $output, $this->settings['fetch_interval']);
             echo $output;
         } else {
+            if (is_admin()) {
+                echo "next update: ";
+                echo $this->getTransientExpiration($this->plugin_prefix . '_fb_albums');
+            }
             echo $transient;
         }
     }
@@ -247,15 +233,10 @@ class WP_Facebook_Page {
         ?>        
         <div class="wrap">
             <h1><?php _e($this->plugin_name); ?></h1>
-            <div class="column">
-                <h2>[tplwpfp-summary]</h2>
-                <?php echo do_shortcode('[tplwpfp-summary]'); ?>
-                <hr>
-            </div>
-            <div>
-                <h2>[tplwpfp-feed]</h2>
-                <?php echo do_shortcode('[tplwpfp-feed]'); ?>
-            </div>
+            <h2>Albums shortcodes</h2>
+            <p class="cf-help">Use thoses shortcodes in WordPress Posts</p>
+            <?php //echo do_shortcode('[tplwpfp-summary]');   ?>
+        <?php echo self::getFacebookAlbumsShortcodes(); ?>
         </div>
         <?php
     }
@@ -267,24 +248,93 @@ class WP_Facebook_Page {
         ?>        
         <div class="wrap">
             <h1><?php _e($this->plugin_name); ?></h1>
-            <?php settings_errors(); ?>
+                <?php settings_errors(); ?>
             <form method="post" action="options.php">
                 <?php settings_fields($this->plugin_prefix . '-config-group') ?>
                 <?php do_settings_sections($this->plugin_prefix . '_config') ?>
-                <?php submit_button(); ?>
+        <?php submit_button(); ?>
             </form>
-            <div><?php var_dump($this); ?></div>
+
+            <h2>Clear Cache</h2>
+            <p class="description">echo self::getPluginTransient()</p>
+            <form action="<?php echo admin_url('admin.php?page=' . $this->plugin_prefix); ?>" method="post">
+                <input type="hidden" name="<?php echo $this->plugin_prefix; ?>-clear-cache" value="1" />
+        <?php submit_button('Clear Cache'); ?>
+            </form>            
+
+            <div class="sidebar">
+                <?php
+                echo do_shortcode('[tplwpfp-summary]');
+                if (is_admin()) {
+                    echo "<br />next update: ";
+                    echo $this->getTransientExpiration($this->plugin_prefix . '_fb_page_summary');
+                }
+                ?>
+            </div>
+
         </div>
         <?php
     }
 
     /**
-     * Add Font Awesome
+     * Get Facebook object
+     * 
+     * @return \Facebook\Facebook
      */
-    public function enqueue_font_awesome() {
-        wp_enqueue_style(
-                'font-awesome', 'https://maxcdn.bootstrapcdn.com/font-awesome/4.6.3/css/font-awesome.min.css', FALSE, NULL
-        );
+    private function getFacebook() {
+
+        $id = get_option($this->plugin_prefix . '_app_id');
+        $secret = get_option($this->plugin_prefix . '_app_secret');
+
+        if (!$id || !$secret) {
+            return;
+        }
+
+        try {
+            $fb = new \Facebook\Facebook([
+                'app_id' => $id,
+                'app_secret' => $secret,
+            ]);
+            $fb->setDefaultAccessToken("{$id}|{$secret}");
+            return $fb;
+        } catch (Facebook\Exceptions\FacebookResponseException $e) {
+            // When Graph returns an error
+            echo 'Graph returned an error: ' . $e->getMessage();
+            exit;
+        } catch (Facebook\Exceptions\FacebookSDKException $e) {
+            // When validation fails or other local issues
+            echo 'Facebook SDK returned an error: ' . $e->getMessage();
+            exit;
+        }
+    }
+
+    /**
+     * Make call to facebook graph api
+     * 
+     * @param array $params
+     * @return array
+     */
+    private function getFacebookResponse($params, $src = false) {
+        if (!$this->fb) {
+            exit;
+        }
+        try {
+            $endpoint = get_option($this->plugin_prefix . '_app_page_id');
+            if (!$src) {
+                $response = $this->fb->get($endpoint . "?fields=" . implode(",", $params));
+            } else {
+                $response = $this->fb->get($src . "?fields=" . implode(",", $params));
+            }
+            return $response->getDecodedBody();
+        } catch (Facebook\Exceptions\FacebookResponseException $e) {
+            // When Graph returns an error
+            echo 'Graph returned an error: ' . $e->getMessage();
+            exit;
+        } catch (Facebook\Exceptions\FacebookSDKException $e) {
+            // When validation fails or other local issues
+            echo 'Facebook SDK returned an error: ' . $e->getMessage();
+            exit;
+        }
     }
 
     /**
@@ -296,8 +346,39 @@ class WP_Facebook_Page {
         );
     }
 
-/// end class
+    /**
+     * Add Font Awesome
+     */
+    public function enqueue_font_awesome() {
+        wp_enqueue_style(
+                'font-awesome', 'https://maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css', FALSE, NULL
+        );
+    }
+
+    /**
+     * Retrieve the human-friendly transient expiration time
+     * 
+     * @param s $transient
+     * @return string
+     */
+    private function getTransientExpiration($transient) {
+
+        $time_now = time();
+        $expiration = get_option('_transient_timeout_' . $transient);
+
+        if (empty($expiration)) {
+            return __('Does not expire', 'tplwpfp');
+        }
+
+        if ($time_now > $expiration) {
+            return __('Expired', 'tplwpfp');
+        }
+
+        return human_time_diff($time_now, $expiration);
+    }
+
+// end class
 }
 
-// Instantce
-$WP_Facebook_Page = WP_Facebook_Page::getInstance();
+// Instantiate class
+$Tribalpixel_WP_Facebook_Page = Tribalpixel_WP_Facebook_Page::getInstance();
