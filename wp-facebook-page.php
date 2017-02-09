@@ -12,7 +12,6 @@
 if (!defined('ABSPATH'))
     exit; // Exit if accessed directly
 
-
     
 // Include SDK
 require_once 'vendor/autoload.php';
@@ -21,6 +20,7 @@ class Tribalpixel_WP_Facebook_Page {
 
     private $plugin_name = 'Facebook Page';
     private $plugin_prefix = 'tplwpfp';
+    private $plugin_version = '1.0.0';
     private $fb;
     private $cache_cleared = false;
 
@@ -95,6 +95,7 @@ class Tribalpixel_WP_Facebook_Page {
     }
 
     /**
+     * Render HTML for shortcode for {$this->plugin_prefix}-summary
      * 
      * @param array $args
      */
@@ -103,21 +104,26 @@ class Tribalpixel_WP_Facebook_Page {
         $transient = get_transient($transID);
         if (false == $transient) {
 
-            $params = ['created_time', 'name', 'photos{webp_images}'];
+            $params = ['created_time', 'name', 'photos{webp_images,name}'];
             $infos = self::getFacebookResponse($params, $args['id']);
             $images = $infos['photos']['data'];
-            $output = '<div class="">';
-            foreach ($images as $k => $v) {
-                $output .= '<div style="background: url(\'' . $v['webp_images'][7]['source'] . '\') no-repeat center center; width:100px; height:100px;"></div>';
+            $id = $infos['id'];
+            //var_dump($infos);
+            $output = '<h3>' . $infos['name'] . '</h3>';
+            $output .= '<div class="home-slideshow">';
+            foreach ($images as $v) {
+                $output .= '<div class="slide">';
+                $output .= '<a href="' . $v['webp_images'][1]['source'] . '" rel="gallery-'.$id.'" class="fancybox" title="'.$v['name'].'">';
+                $output .= '<img src="' . $v['webp_images'][3]['source'] . '" style="width:100%;" alt="'.$v['name'].'" />';
+                //$output .= '<div style="background: url(\''.$v['webp_images'][1]['source'].'\') no-repeat center center; width:100%; height:auto;"></div>';
+                $output .= '<div class="slide-txt">'.$v['name'].'</div>';
+                $output .= '</a></div>';
             }
             $output .= '</div>';
-            set_transient($transID, $output, $this->settings['fetch_interval']);
-            echo $output;
+            //set_transient($transID, $output, $this->settings['fetch_interval']);
+            return $output;
         } else {
-            if (WP_DEBUG) {
-                echo '<strong>Cached for: ' . $this->settings['fetch_interval'] . ' seconds</strong>';
-            }
-            echo $transient;
+            return $transient;
         }
     }
 
@@ -138,9 +144,9 @@ class Tribalpixel_WP_Facebook_Page {
             }
             $output .= '</ul>';
             set_transient($this->plugin_prefix . '_fb_page_summary', $output, $this->settings['fetch_interval']);
-            echo $output;
+            return $output;
         } else {
-            echo $transient;
+            return $transient;
         }
     }
 
@@ -176,13 +182,13 @@ class Tribalpixel_WP_Facebook_Page {
             $output .= '</div>';
 
             set_transient($this->plugin_prefix . '_fb_albums', $output, $this->settings['fetch_interval']);
-            echo $output;
+            return $output;
         } else {
             if (is_admin()) {
                 echo "next update: ";
                 echo $this->getTransientExpiration($this->plugin_prefix . '_fb_albums');
             }
-            echo $transient;
+            return $transient;
         }
     }
 
