@@ -12,6 +12,14 @@
 if (!defined('ABSPATH'))
     exit; // Exit if accessed directly
 
+
+
+
+
+
+
+
+
     
 // Include SDK
 require_once 'vendor/autoload.php';
@@ -23,10 +31,12 @@ class Tribalpixel_WP_Facebook_Page {
     private $plugin_version = '1.0.0';
     private $fb;
     private $cache_cleared = false;
-
+    private $max_display;
+    
     /** The settings object */
     private $settings = [
         'max_feed' => 20,
+        'max_display' => 1,
         'fetch_interval' => 3600, // in seconds
     ];
 
@@ -54,6 +64,8 @@ class Tribalpixel_WP_Facebook_Page {
 
         // Get instance of Facebook object
         $this->fb = self::getFacebook();
+        
+        $this->max_display = get_option($this->plugin_prefix . '_app_max_display', $this->settings['max_display']);
 
         // Admin
         add_action('admin_menu', array(&$this, 'add_settings_page'));
@@ -78,6 +90,7 @@ class Tribalpixel_WP_Facebook_Page {
     public function register_shortcodes() {
         add_shortcode("{$this->plugin_prefix}-summary", array(&$this, 'showPageSummmary'));
         add_shortcode("{$this->plugin_prefix}-album", array(&$this, 'showAlbum'));
+        add_shortcode("{$this->plugin_prefix}-latest", array(&$this, 'showLatestPosts'));
     }
 
     public function clear_cache() {
@@ -95,9 +108,60 @@ class Tribalpixel_WP_Facebook_Page {
     }
 
     /**
+     * Render HTML for shortcode for {$this->plugin_prefix}-latest
+     * 
+     * @return string
+     */
+    public function showLatestPosts() {
+        $transID = $this->plugin_prefix . '_fb_latest';
+        $transient = get_transient($transID);
+        if (false == $transient) {
+            $limit = $this->settings["max_feed"];
+            //$params = ["posts.limit({$limit}){type,id,status_type,attachments}"];
+            $params = ["posts.limit({$limit}){id,created_time,type,status_type,timeline_visibility,story}"];
+            $infos = self::getFacebookResponse($params)['posts']['data'];
+            $clean = array_filter($infos, array(&$this, 'filterPosts'));
+            //var_dump($infos);
+            $output = "";
+            for ($i = 0; $i < $this->max_display; $i++) {
+                $last_post_id = array_shift($clean)['id'];
+                $post_url = 'https://www.facebook.com/' . str_replace("_", "/posts/", $last_post_id);
+                //echo $post_url;
+                //var_dump($last_post_id);
+                //$last_post = self::getFacebookResponse(["id", "created_time", "full_picture", "message", "name", "type", "status_type", "timeline_visibility", "story", "story_tags", "attachments"], $last_post_id);
+                //var_dump($last_post);
+                //$output = '<h3>' . $last_post['message'] . '</h3>';
+
+                $output .= '<div class="fb-post" data-href="' . $post_url . '" data-width="auto" data-show-text="true"></div>';
+ 
+            } // endfor
+//             set_transient($transID, $output, $this->settings['fetch_interval']);
+            return $output;
+        } else {
+            return $transient;
+        }
+    }
+
+    /**
+     * Custom filter for Facebook Posts type/status_type
+     * 
+     * @param array $array
+     * @return array
+     */
+    private function filterPosts($array) {
+        $filters = ['video', 'link'];
+        //$filters = [];
+        //if ($array['status_type'] === 'shared_story' && $array['type'] === 'photo' && $array['timeline_visibility'] === 'normal') {
+        if ($array['timeline_visibility'] === 'normal' && !in_array($array['type'], $filters)) {
+            return $array;
+        }
+    }
+
+    /**
      * Render HTML for shortcode for {$this->plugin_prefix}-summary
      * 
      * @param array $args
+     * @return string
      */
     public function showAlbum($args) {
         $transID = $this->plugin_prefix . '_album_' . $args['id'];
@@ -113,14 +177,14 @@ class Tribalpixel_WP_Facebook_Page {
             $output .= '<div class="home-slideshow">';
             foreach ($images as $v) {
                 $output .= '<div class="slide">';
-                $output .= '<a href="' . $v['webp_images'][1]['source'] . '" rel="gallery-'.$id.'" class="fancybox" title="'.$v['name'].'">';
-                $output .= '<img src="' . $v['webp_images'][3]['source'] . '" style="width:100%;" alt="'.$v['name'].'" />';
+                $output .= '<a href="' . $v['webp_images'][1]['source'] . '" rel="gallery-' . $id . '" class="fancybox" title="' . $v['name'] . '">';
+                $output .= '<img src="' . $v['webp_images'][3]['source'] . '" style="width:100%;" alt="' . $v['name'] . '" />';
                 //$output .= '<div style="background: url(\''.$v['webp_images'][1]['source'].'\') no-repeat center center; width:100%; height:auto;"></div>';
-                $output .= '<div class="slide-txt">'.$v['name'].'</div>';
+                $output .= '<div class="slide-txt">' . $v['name'] . '</div>';
                 $output .= '</a></div>';
             }
             $output .= '</div>';
-            //set_transient($transID, $output, $this->settings['fetch_interval']);
+            set_transient($transID, $output, $this->settings['fetch_interval']);
             return $output;
         } else {
             return $transient;
@@ -212,6 +276,7 @@ class Tribalpixel_WP_Facebook_Page {
         register_setting($this->plugin_prefix . '-config-group', $this->plugin_prefix . '_app_id');
         register_setting($this->plugin_prefix . '-config-group', $this->plugin_prefix . '_app_secret');
         register_setting($this->plugin_prefix . '-config-group', $this->plugin_prefix . '_app_page_id');
+        register_setting($this->plugin_prefix . '-config-group', $this->plugin_prefix . '_app_max_display');
 
         //add_settings_section($id, $title, $callback, $page)
         add_settings_section($this->plugin_prefix . '-config-section', __('Configuration'), NULL, $this->plugin_prefix . '_config');
@@ -220,6 +285,7 @@ class Tribalpixel_WP_Facebook_Page {
         add_settings_field($this->plugin_prefix . '_app_id', 'Facebook App ID', array(&$this, 'render_field'), $this->plugin_prefix . '_config', $this->plugin_prefix . '-config-section', array('id' => $this->plugin_prefix . '_app_id'));
         add_settings_field($this->plugin_prefix . '_app_secret', 'Facebook App Secret', array(&$this, 'render_field'), $this->plugin_prefix . '_config', $this->plugin_prefix . '-config-section', array('id' => $this->plugin_prefix . '_app_secret'));
         add_settings_field($this->plugin_prefix . '_app_page_id', 'Facebook Page ID', array(&$this, 'render_field'), $this->plugin_prefix . '_config', $this->plugin_prefix . '-config-section', array('id' => $this->plugin_prefix . '_app_page_id'));
+        add_settings_field($this->plugin_prefix . '_app_max_display', 'Max display Posts', array(&$this, 'render_field'), $this->plugin_prefix . '_config', $this->plugin_prefix . '-config-section', array('id' => $this->plugin_prefix . '_app_max_display'));
     }
 
     /**
@@ -270,10 +336,10 @@ class Tribalpixel_WP_Facebook_Page {
 
             <div class="sidebar">
                 <?php
-                echo do_shortcode('[tplwpfp-summary]');
+                echo do_shortcode('[tplwpfp-latest]');
                 if (is_admin()) {
                     echo "<br />next update: ";
-                    echo $this->getTransientExpiration($this->plugin_prefix . '_fb_page_summary');
+                    //echo $this->getTransientExpiration($this->plugin_prefix . '_fb_page_summary');
                 }
                 ?>
             </div>
